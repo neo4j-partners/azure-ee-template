@@ -1,0 +1,167 @@
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.eggs/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env.bak/
+
+# uv
+.uv/
+
+# Testing & Coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Cython
+cython_debug/
+
+# =============================================================================
+# macOS
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# =============================================================================
+# Windows
+# =============================================================================
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*.stackdump
+[Dd]esktop.ini
+
+# =============================================================================
+# IntelliJ / JetBrains IDEs
+# =============================================================================
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea_modules/
+atlassian-ide-plugin.xml
+out/
+
+# =============================================================================
+# VSCode
+# =============================================================================
+.vscode/
+*.code-workspace
+.history/
+
+# =============================================================================
+# Other Editors
+# =============================================================================
+.claude/
+*.swp
+*.swo
+*~
+\#*\#
+.#*
+
+# =============================================================================
+# Azure / Bicep
+# =============================================================================
+# Compiled ARM templates (regenerated from .bicep files)
+mainTemplate.json
+*.generated.json
+infra/main.json
+infra/*.json
+!infra/*.parameters.json.sample
+
+# ARM template parameter files with secrets
+*.parameters.local.json
+
+# Azure CLI / deployment artifacts
+.azure/
+azure.json
+
+# =============================================================================
+# Build artifacts
+# =============================================================================
+dist/
+build/
+*.whl
+
+# =============================================================================
+# Environment & Secrets
+# =============================================================================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+*.pem
+*.key
+secrets/
+
+# =============================================================================
+# Deployment
+# =============================================================================
+# Deployment tools working directory
+deployments/.arm-testing/
+
+# Deployment details (contains credentials)
+.deployments/
+
+# Terraform (if used alongside Bicep)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# =============================================================================
+# Logs
+# =============================================================================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
