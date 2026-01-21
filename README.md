@@ -1,6 +1,6 @@
 # Neo4j Enterprise Edition - Azure Deployment Template
 
-Azure Bicep templates for deploying Neo4j Enterprise Edition on Azure VM Scale Sets.
+Production-ready Azure Bicep templates for deploying Neo4j Enterprise Edition on Azure VM Scale Sets. This project provides a complete deployment solution with automated provisioning, cluster configuration, and enterprise authentication support. Designed for both development/testing workflows and production deployments, it includes a Python-based CLI tool for managing the full deployment lifecycle—from initial setup through validation and cleanup.
 
 ## Features
 
@@ -9,6 +9,7 @@ Azure Bicep templates for deploying Neo4j Enterprise Edition on Azure VM Scale S
 - **Load Balancer**: Automatic load balancer for clusters (3+ nodes)
 - **Cloud-init**: VM provisioning via cloud-init (no custom script extensions)
 - **Security**: NSG with proper port configuration, SSRF protection
+- **M2M Bearer Token Authentication**: OAuth 2.0 machine-to-machine authentication via Microsoft Entra ID (Azure AD) for secure service-to-service connectivity
 
 ## Prerequisites
 
