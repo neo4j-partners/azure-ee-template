@@ -46,6 +46,8 @@ uv run neo4j-deploy test
 uv run neo4j-deploy cleanup --all --force
 ```
 
+> **Note:** The setup wizard includes optional M2M (Machine-to-Machine) bearer token authentication configuration via Microsoft Entra ID. See [M2M Bearer Token Authentication](#m2m-bearer-token-authentication) for details.
+
 ## Commands
 
 | Command | Description |
@@ -199,11 +201,7 @@ After deployment, you'll receive:
 - `Neo4jClusterBrowserURL`: Load balancer URL (clusters only)
 - `Username`: Default username (`neo4j`)
 
-## Authentication
-
-For advanced authentication options including OIDC, SSO, and machine-to-machine (M2M) bearer tokens, see [AUTH.md](AUTH.md).
-
-### M2M Bearer Token Authentication
+## M2M Bearer Token Authentication
 
 The setup wizard includes an optional step to configure M2M (Machine-to-Machine) authentication using Microsoft Entra ID (Azure AD). This allows services, APIs, and automated processes to connect to Neo4j using OAuth 2.0 bearer tokens.
 
@@ -216,7 +214,7 @@ During setup, you'll be asked:
 1. **Would you like to configure M2M bearer token authentication?** - Choose yes to enable
 2. **Automatic or Manual setup?** - Automatic uses Azure CLI to create Entra ID apps
 
-#### What the Automatic Setup Does
+### What the Automatic Setup Does
 
 The wizard uses Azure CLI (`az`) commands to:
 
@@ -229,7 +227,7 @@ The wizard uses Azure CLI (`az`) commands to:
 4. **Generate a client secret** - For the client app (saved securely, shown once)
 5. **Grant API permissions** - Assigns the appropriate role to the client app
 
-#### After Setup
+### After Setup
 
 The M2M configuration is automatically included in deployments. Your services can authenticate using:
 
@@ -253,7 +251,7 @@ For detailed M2M configuration guides, see:
 - [M2M.md](M2M.md) - Comprehensive M2M setup guide
 - [M2M_v2.md](M2M_v2.md) - Quick guide specific to this deployment
 
-#### Validating Bearer Token Authentication
+### Validating Bearer Token Authentication
 
 After deployment, validate M2M authentication works:
 
