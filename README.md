@@ -1,6 +1,8 @@
 # Neo4j Enterprise Edition - Azure Deployment Template
 
-Production-ready Azure Bicep templates for deploying Neo4j Enterprise Edition on Azure VM Scale Sets. This project provides a complete deployment solution with automated provisioning, cluster configuration, and enterprise authentication support. Designed for both development/testing workflows and production deployments, it includes a Python-based CLI tool for managing the full deployment lifecycle—from initial setup through validation and cleanup.
+Sample Azure Bicep templates for deploying Neo4j Enterprise Edition on Azure VM Scale Sets. This project provides a deployment solution with automated provisioning, cluster configuration, and enterprise authentication support. It includes a Python-based CLI tool for managing the full deployment lifecycle—from initial setup through validation and cleanup.
+
+> **Disclaimer:** This is a sample template provided as-is and is not officially supported. It requires full security hardening and review before use in any production environment.
 
 ## Features
 
@@ -42,7 +44,13 @@ uv run neo4j-deploy status
 # Test the deployment
 uv run neo4j-deploy test
 
+# Validate M2M bearer token authentication (if configured during setup)
+export NEO4J_CLIENT_SECRET="your-client-secret"
+cd ../validate-bearer-token
+uv run validate_bearer.py --scenario standalone-v2025
+
 # Clean up resources
+cd ../deployments
 uv run neo4j-deploy cleanup --all --force
 ```
 
@@ -134,39 +142,6 @@ Three password strategies are available:
 | 6000 | TCP | Cluster Communication |
 | 7000 | TCP | Raft Consensus |
 
-## Manual Deployment (Azure CLI)
-
-For deployments without the framework:
-
-### Deploy Standalone (1 node)
-
-```bash
-az group create --name neo4j-standalone-rg --location eastus
-
-az deployment group create \
-  --resource-group neo4j-standalone-rg \
-  --template-file infra/main.bicep \
-  --parameters @infra/parameters.json \
-  --parameters adminPassword="YourSecurePassword123!"
-```
-
-### Deploy Cluster (3+ nodes)
-
-```bash
-az group create --name neo4j-cluster-rg --location eastus
-
-az deployment group create \
-  --resource-group neo4j-cluster-rg \
-  --template-file infra/main.bicep \
-  --parameters @infra/parameters.json \
-  --parameters nodeCount=3 adminPassword="YourSecurePassword123!" licenseType="Enterprise"
-```
-
-### Cleanup
-
-```bash
-az group delete --name <resource-group-name> --yes --no-wait
-```
 
 ## Project Structure
 

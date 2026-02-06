@@ -313,7 +313,8 @@ class Neo4jValidator:
     def run_full_validation(
         self,
         license_type: str = "Evaluation",
-        expected_node_count: Optional[int] = None
+        expected_node_count: Optional[int] = None,
+        keep_data: bool = False
     ) -> bool:
         """
         Run complete validation suite.
@@ -323,11 +324,12 @@ class Neo4jValidator:
         2. Create movies dataset
         3. Verify dataset was created
         4. Check license type (if Evaluation)
-        5. Clean up test dataset
+        5. Clean up test dataset (unless keep_data is True)
 
         Args:
             license_type: Expected license type ("Evaluation" or "Enterprise")
             expected_node_count: Expected number of cluster nodes (None for standalone)
+            keep_data: If True, skip cleanup and leave test data in the database
 
         Returns:
             True if all validations pass, False otherwise
@@ -354,11 +356,14 @@ class Neo4jValidator:
             validation_passed = False
 
         finally:
-            # Always clean up test data, even if validation failed
-            try:
-                self.cleanup_movies_dataset()
-            except Exception as cleanup_error:
-                console.print(f"[yellow]⚠ Cleanup failed: {cleanup_error}[/yellow]")
+            if keep_data:
+                console.print("[cyan]ℹ Keeping test data (--keep-data flag set)[/cyan]")
+            else:
+                # Always clean up test data, even if validation failed
+                try:
+                    self.cleanup_movies_dataset()
+                except Exception as cleanup_error:
+                    console.print(f"[yellow]⚠ Cleanup failed: {cleanup_error}[/yellow]")
 
         return validation_passed
 
@@ -368,7 +373,8 @@ def validate_deployment(
     username: str,
     password: str,
     license_type: str = "Evaluation",
-    expected_node_count: Optional[int] = None
+    expected_node_count: Optional[int] = None,
+    keep_data: bool = False
 ) -> bool:
     """
     Validate a Neo4j deployment.
@@ -381,6 +387,7 @@ def validate_deployment(
         password: Database password
         license_type: Expected license type ("Evaluation" or "Enterprise")
         expected_node_count: Expected number of cluster nodes (None for standalone)
+        keep_data: If True, skip cleanup and leave test data in the database
 
     Returns:
         True if validation passes, False otherwise
@@ -396,7 +403,7 @@ def validate_deployment(
         True
     """
     with Neo4jValidator(uri, username, password) as validator:
-        return validator.run_full_validation(license_type, expected_node_count)
+        return validator.run_full_validation(license_type, expected_node_count, keep_data)
 
 
 def load_connection_info_from_scenario(scenario_name: str) -> Optional[dict]:
@@ -464,13 +471,17 @@ def main():
     """Command-line entry point for validate_deploy."""
     import sys
 
+    # Check for --keep-data flag
+    keep_data = "--keep-data" in sys.argv
+    args = [a for a in sys.argv if a != "--keep-data"]
+
     # Support two modes:
     # 1. Scenario name (reads from .arm-testing)
     # 2. Full manual parameters (uri, username, password, license_type)
 
-    if len(sys.argv) == 2:
+    if len(args) == 2:
         # Mode 1: Scenario name
-        scenario_name = sys.argv[1]
+        scenario_name = args[1]
 
         console.print(f"\n[bold]Neo4j Deployment Validator[/bold]\n")
         console.print(f"[cyan]Scenario:[/cyan] {scenario_name}\n")
@@ -500,12 +511,12 @@ def main():
             console.print(f"[cyan]Expected Nodes:[/cyan] {node_count}")
         console.print()
 
-    elif len(sys.argv) == 5:
+    elif len(args) == 5:
         # Mode 2: Full manual parameters (standalone)
-        uri = sys.argv[1]
-        username = sys.argv[2]
-        password = sys.argv[3]
-        license_type = sys.argv[4]
+        uri = args[1]
+        username = args[2]
+        password = args[3]
+        license_type = args[4]
         node_count = None
 
         console.print(f"\n[bold]Neo4j Deployment Validator[/bold]\n")
@@ -513,13 +524,13 @@ def main():
         console.print(f"[cyan]Username:[/cyan] {username}")
         console.print(f"[cyan]License Type:[/cyan] {license_type}\n")
 
-    elif len(sys.argv) == 6:
+    elif len(args) == 6:
         # Mode 3: Full manual parameters with node count (cluster)
-        uri = sys.argv[1]
-        username = sys.argv[2]
-        password = sys.argv[3]
-        license_type = sys.argv[4]
-        node_count = int(sys.argv[5])
+        uri = args[1]
+        username = args[2]
+        password = args[3]
+        license_type = args[4]
+        node_count = int(args[5])
 
         console.print(f"\n[bold]Neo4j Deployment Validator[/bold]\n")
         console.print(f"[cyan]URI:[/cyan] {uri}")
@@ -530,23 +541,22 @@ def main():
     else:
         console.print("[red]Error: Invalid arguments[/red]")
         console.print("\n[cyan]Usage (from deployment):[/cyan]")
-        console.print("  validate_deploy <scenario_name>")
+        console.print("  validate_deploy <scenario_name> [--keep-data]")
         console.print("\n[cyan]Usage (manual - standalone):[/cyan]")
-        console.print("  validate_deploy <uri> <username> <password> <license_type>")
+        console.print("  validate_deploy <uri> <username> <password> <license_type> [--keep-data]")
         console.print("\n[cyan]Usage (manual - cluster):[/cyan]")
-        console.print("  validate_deploy <uri> <username> <password> <license_type> <node_count>")
+        console.print("  validate_deploy <uri> <username> <password> <license_type> <node_count> [--keep-data]")
+        console.print("\n[cyan]Options:[/cyan]")
+        console.print("  --keep-data    Keep test data in database after validation")
         console.print("\n[cyan]Examples:[/cyan]")
         console.print("  validate_deploy standalone-v5")
+        console.print("  validate_deploy standalone-v5 --keep-data")
         console.print("  validate_deploy bolt://standalone.example.com:7687 neo4j mypassword Evaluation")
         console.print("  validate_deploy neo4j://cluster.example.com:7687 neo4j mypassword Enterprise 3")
         sys.exit(1)
 
     try:
-        # Pass node_count if available
-        if len(sys.argv) == 2 or len(sys.argv) == 5 or len(sys.argv) == 6:
-            success = validate_deployment(uri, username, password, license_type, node_count)
-        else:
-            success = validate_deployment(uri, username, password, license_type)
+        success = validate_deployment(uri, username, password, license_type, node_count, keep_data)
         sys.exit(0 if success else 1)
     except Exception as e:
         console.print(f"\n[red bold]Validation failed with error:[/red bold]")
