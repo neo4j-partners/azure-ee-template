@@ -1,0 +1,64 @@
+{
+  "realm": "neo4j",
+  "enabled": true,
+  "roles": {
+    "client": {
+      "neo4j-client": [
+        { "name": "neo4j-admin", "description": "Neo4j administrator role" },
+        { "name": "neo4j-readwrite", "description": "Neo4j read-write role" },
+        { "name": "neo4j-readonly", "description": "Neo4j read-only role" }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "neo4j-client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "neo4j-client-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "neo4j-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "usermodel.clientRoleMapping.clientId": "neo4j-client",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "neo4j-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "neo4j-client",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-neo4j-client",
+      "enabled": true,
+      "serviceAccountClientId": "neo4j-client",
+      "clientRoles": {
+        "neo4j-client": ["neo4j-admin", "neo4j-readwrite", "neo4j-readonly"]
+      }
+    }
+  ]
+}

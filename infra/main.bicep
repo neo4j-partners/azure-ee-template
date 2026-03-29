@@ -10,9 +10,7 @@ param adminPassword string
 
 param vmSize string
 
-@allowed([
-  '2025'
-])
+@description('Neo4j graph database version. Uses latest available from the stable yum repository.')
 param graphDatabaseVersion string
 
 param licenseType string = 'Enterprise'

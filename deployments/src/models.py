@@ -92,12 +92,30 @@ class M2MSettings(BaseModel):
     """M2M (Machine-to-Machine) authentication settings."""
 
     enabled: bool = Field(False, description="Whether M2M auth is enabled")
+    provider_type: str = Field("entra", description="Provider type: 'entra' or 'keycloak'")
+
+    # Entra ID fields (used when provider_type is 'entra')
     tenant_id: Optional[str] = Field(None, description="Azure Entra ID tenant ID")
     api_app_id: Optional[str] = Field(None, description="Neo4j API app registration ID")
     api_app_name: Optional[str] = Field(None, description="Neo4j API app display name")
-    audience: Optional[str] = Field(None, description="API identifier (e.g., api://neo4j-m2m)")
+    audience: Optional[str] = Field(None, description="OIDC audience value")
     client_app_id: Optional[str] = Field(None, description="Client app registration ID")
     client_app_name: Optional[str] = Field(None, description="Client app display name")
+
+    # Generic OIDC fields (used when provider_type is 'keycloak')
+    discovery_uri: Optional[str] = Field(None, description="OIDC discovery URI")
+    token_endpoint: Optional[str] = Field(None, description="Token endpoint for acquiring tokens")
+    client_id: Optional[str] = Field(None, description="OIDC client ID")
+    client_secret: Optional[str] = Field(None, description="OIDC client secret (demo only)")
+    username_claim: str = Field("sub", description="JWT claim for username")
+    groups_claim: str = Field("roles", description="JWT claim for group/role mapping")
+    role_mapping: Optional[str] = Field(None, description="Role mapping string for Neo4j")
+    token_type_config: str = Field(
+        "token_type_principal=access_token;token_type_authentication=access_token",
+        description="Neo4j token type configuration",
+    )
+    display_name: str = Field("Keycloak M2M", description="OIDC provider display name")
+    oidc_visible: bool = Field(False, description="Whether OIDC provider is visible in Neo4j Browser")
 
 
 class Settings(BaseModel):

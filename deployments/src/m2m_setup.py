@@ -28,40 +28,28 @@ class M2MConfig:
     """M2M authentication configuration."""
 
     enabled: bool = False
+    provider_type: str = "entra"  # "entra" or "keycloak"
+
+    # Entra ID fields
     tenant_id: Optional[str] = None
     api_app_id: Optional[str] = None  # Neo4j API app (resource)
     api_app_name: Optional[str] = None
-    audience: Optional[str] = None  # e.g., api://neo4j-m2m
+    audience: Optional[str] = None  # e.g., api://neo4j-m2m or neo4j-client
     client_app_id: Optional[str] = None  # Client service app
     client_app_name: Optional[str] = None
     client_secret: Optional[str] = None
     client_secret_expiry: Optional[str] = None
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary for YAML serialization."""
-        return {
-            "enabled": self.enabled,
-            "tenant_id": self.tenant_id,
-            "api_app_id": self.api_app_id,
-            "api_app_name": self.api_app_name,
-            "audience": self.audience,
-            "client_app_id": self.client_app_id,
-            "client_app_name": self.client_app_name,
-            # Note: client_secret is NOT saved to config for security
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "M2MConfig":
-        """Create from dictionary."""
-        return cls(
-            enabled=data.get("enabled", False),
-            tenant_id=data.get("tenant_id"),
-            api_app_id=data.get("api_app_id"),
-            api_app_name=data.get("api_app_name"),
-            audience=data.get("audience"),
-            client_app_id=data.get("client_app_id"),
-            client_app_name=data.get("client_app_name"),
-        )
+    # Generic OIDC fields (used for Keycloak)
+    discovery_uri: Optional[str] = None
+    token_endpoint: Optional[str] = None
+    client_id: Optional[str] = None
+    username_claim: str = "sub"
+    groups_claim: str = "roles"
+    role_mapping: Optional[str] = None
+    token_type_config: str = "token_type_principal=access_token;token_type_authentication=access_token"
+    display_name: str = "Keycloak M2M"
+    oidc_visible: bool = False
 
 
 def run_az_command(args: list[str], check: bool = True) -> Optional[str]:
@@ -105,6 +93,33 @@ def get_subscription_info() -> Optional[dict]:
     if output:
         return json.loads(output)
     return None
+
+
+def get_current_user_object_id() -> Optional[str]:
+    """Get the object ID of the currently signed-in user."""
+    output = run_az_command(
+        ["ad", "signed-in-user", "show", "--query", "id", "-o", "tsv"],
+        check=False,
+    )
+    return output if output else None
+
+
+def add_app_owner(app_id: str, user_object_id: str) -> bool:
+    """
+    Add a user as an owner of an app registration.
+
+    Args:
+        app_id: Application (client) ID
+        user_object_id: Object ID of the user to add as owner
+
+    Returns:
+        True if successful, False otherwise
+    """
+    result = run_az_command(
+        ["ad", "app", "owner", "add", "--id", app_id, "--owner-object-id", user_object_id],
+        check=False,
+    )
+    return result is not None
 
 
 def check_app_exists(display_name: str) -> Optional[str]:
@@ -228,6 +243,14 @@ def create_api_app(display_name: str, identifier_uri: str) -> Optional[tuple[str
     console.print("[cyan]Creating service principal...[/cyan]")
     run_az_command(["ad", "sp", "create", "--id", app_id], check=False)
 
+    # Step 5: Add current user as app owner (ensures manage/delete access)
+    user_oid = get_current_user_object_id()
+    if user_oid:
+        if add_app_owner(app_id, user_oid):
+            console.print("[green]✓ Added current user as app owner[/green]")
+        else:
+            console.print("[yellow]Warning: Could not add current user as app owner[/yellow]")
+
     return app_id, object_id, actual_identifier_uri
 
 
@@ -261,6 +284,14 @@ def create_client_app(display_name: str) -> Optional[str]:
 
     # Create service principal
     run_az_command(["ad", "sp", "create", "--id", output], check=False)
+
+    # Add current user as app owner (ensures manage/delete access)
+    user_oid = get_current_user_object_id()
+    if user_oid:
+        if add_app_owner(output, user_oid):
+            console.print("[green]✓ Added current user as app owner[/green]")
+        else:
+            console.print("[yellow]Warning: Could not add current user as app owner[/yellow]")
 
     return output
 
@@ -405,7 +436,33 @@ def generate_neo4j_oidc_config(config: M2MConfig) -> str:
     Returns:
         Configuration string for neo4j.conf
     """
-    if not config.enabled or not config.tenant_id:
+    if not config.enabled:
+        return ""
+
+    if config.provider_type == "keycloak":
+        if not config.discovery_uri or not config.audience or not config.role_mapping:
+            return ""
+        visible = "true" if config.oidc_visible else "false"
+        return f"""
+# ============================================================
+# M2M OIDC Authentication ({config.display_name})
+# Auto-generated by neo4j-deploy setup
+# ============================================================
+
+dbms.security.authentication_providers=oidc-m2m,native
+dbms.security.authorization_providers=oidc-m2m,native
+dbms.security.oidc.m2m.visible={visible}
+dbms.security.oidc.m2m.display_name={config.display_name}
+dbms.security.oidc.m2m.well_known_discovery_uri={config.discovery_uri}
+dbms.security.oidc.m2m.audience={config.audience}
+dbms.security.oidc.m2m.claims.username={config.username_claim}
+dbms.security.oidc.m2m.claims.groups={config.groups_claim}
+dbms.security.oidc.m2m.config={config.token_type_config}
+dbms.security.oidc.m2m.authorization.group_to_role_mapping={config.role_mapping}
+"""
+
+    # Entra ID path
+    if not config.tenant_id:
         return ""
 
     # Use v1.0 discovery endpoint because Azure AD client credentials flow
@@ -416,28 +473,15 @@ def generate_neo4j_oidc_config(config: M2MConfig) -> str:
 # Auto-generated by neo4j-deploy setup
 # ============================================================
 
-# Add M2M provider to authentication chain
 dbms.security.authentication_providers=oidc-m2m,native
 dbms.security.authorization_providers=oidc-m2m,native
-
-# Hide from Browser login (M2M is programmatic only)
 dbms.security.oidc.m2m.visible=false
 dbms.security.oidc.m2m.display_name=Entra ID M2M
-
-# OIDC Discovery endpoint (v1.0 for client credentials flow)
 dbms.security.oidc.m2m.well_known_discovery_uri=https://login.microsoftonline.com/{config.tenant_id}/.well-known/openid-configuration
-
-# Audience - must match the API identifier
 dbms.security.oidc.m2m.audience={config.audience}
-
-# Claims mapping for Entra ID
 dbms.security.oidc.m2m.claims.username=sub
 dbms.security.oidc.m2m.claims.groups=roles
-
-# Token type configuration for Entra ID
 dbms.security.oidc.m2m.config=token_type_principal=access_token;token_type_authentication=access_token
-
-# Map Entra ID app roles to Neo4j roles
 dbms.security.oidc.m2m.authorization.group_to_role_mapping="Neo4j.Admin"=admin;"Neo4j.ReadWrite"=editor;"Neo4j.ReadOnly"=reader
 """
 
@@ -468,20 +512,125 @@ class M2MSetupWizard:
                 "  - Backend services and APIs\n"
                 "  - ETL pipelines (Spark, Airflow)\n"
                 "  - CI/CD pipelines\n"
-                "  - Microservices\n\n"
-                "[cyan]This wizard can automatically create the required Entra ID app registrations.[/cyan]",
+                "  - Microservices",
                 title="About M2M Authentication",
                 border_style="blue",
             )
         )
 
-        # Ask if user wants to set up M2M
-        if not Confirm.ask("\nWould you like to configure M2M bearer token authentication?", default=False):
+        from rich.prompt import IntPrompt
+
+        console.print("\n[bold]M2M Provider:[/bold]")
+        console.print("  1. [cyan]No M2M[/cyan] - Skip bearer token authentication")
+        console.print("  2. [cyan]Keycloak[/cyan] - Use Keycloak OIDC (reads from keycloak-infra deployment)")
+        console.print("  3. [cyan]Entra ID[/cyan] - Use Microsoft Entra ID")
+
+        choice = IntPrompt.ask("Select option", default=1, choices=["1", "2", "3"])
+
+        if choice == 1:
             console.print("[yellow]Skipping M2M authentication setup.[/yellow]")
             self.config.enabled = False
             return self.config
+        elif choice == 2:
+            return self._keycloak_setup()
+        else:
+            return self._entra_setup()
 
+    def _keycloak_setup(self) -> M2MConfig:
+        """Set up Keycloak OIDC by reading from keycloak-infra/.deployment.json."""
+        import pathlib
+
+        console.print("\n[bold]Keycloak OIDC Setup[/bold]")
+
+        # Look for .deployment.json relative to project root
+        # The deployments/ dir is typically one level down from the project root
+        script_dir = pathlib.Path(__file__).resolve().parent.parent  # deployments/
+        project_root = script_dir.parent  # project root
+        default_path = project_root / "keycloak-infra" / ".deployment.json"
+
+        if default_path.exists():
+            console.print(f"[green]Found Keycloak deployment info: {default_path}[/green]")
+            deployment_path = default_path
+        else:
+            console.print("[yellow]Could not find keycloak-infra/.deployment.json[/yellow]")
+            path_str = Prompt.ask("Path to Keycloak .deployment.json")
+            deployment_path = pathlib.Path(path_str).expanduser().resolve()
+            if not deployment_path.exists():
+                console.print(f"[red]File not found: {deployment_path}[/red]")
+                self.config.enabled = False
+                return self.config
+
+        # Read deployment info
+        with open(deployment_path) as f:
+            deployment_info = json.load(f)
+
+        oidc = deployment_info.get("oidc", {})
+        if not oidc:
+            console.print("[red]No 'oidc' section found in deployment info.[/red]")
+            self.config.enabled = False
+            return self.config
+
+        # Populate config from deployment info
         self.config.enabled = True
+        self.config.provider_type = "keycloak"
+        self.config.discovery_uri = oidc.get("discovery_uri")
+        self.config.token_endpoint = oidc.get("token_endpoint")
+        self.config.audience = oidc.get("audience")
+        self.config.client_id = oidc.get("client_id")
+        self.config.client_secret = oidc.get("client_secret")
+        self.config.role_mapping = oidc.get("role_mapping")
+        self.config.token_type_config = oidc.get("token_type_config", self.config.token_type_config)
+        self.config.display_name = oidc.get("display_name", self.config.display_name)
+        self.config.oidc_visible = oidc.get("visible", False)
+
+        # Show summary
+        table = Table(title="Keycloak OIDC Configuration")
+        table.add_column("Setting", style="cyan")
+        table.add_column("Value", style="white")
+        table.add_row("Discovery URI", self.config.discovery_uri or "Not set")
+        table.add_row("Audience", self.config.audience or "Not set")
+        table.add_row("Client ID", self.config.client_id or "Not set")
+        secret_display = f"{self.config.client_secret[:8]}..." if self.config.client_secret else "Not set"
+        table.add_row("Client Secret", secret_display)
+        table.add_row("Role Mapping", self.config.role_mapping or "Not set")
+        table.add_row("Display Name", self.config.display_name)
+        console.print(table)
+
+        # Validate discovery URI is reachable
+        if self.config.discovery_uri:
+            console.print("\n[cyan]Checking discovery endpoint...[/cyan]")
+            try:
+                import urllib.request
+                req = urllib.request.Request(self.config.discovery_uri, method="GET")
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    if resp.status == 200:
+                        console.print("[green]Discovery endpoint is reachable[/green]")
+                    else:
+                        console.print(f"[yellow]Discovery endpoint returned HTTP {resp.status}[/yellow]")
+            except Exception as e:
+                console.print(f"[yellow]Could not reach discovery endpoint: {e}[/yellow]")
+                console.print("[yellow]This may be fine if Keycloak is still starting.[/yellow]")
+
+        if not Confirm.ask("\nUse this configuration?", default=True):
+            self.config.enabled = False
+            return self.config
+
+        # Show OIDC config preview
+        console.print("\n[bold]Neo4j Configuration Preview:[/bold]")
+        console.print(
+            Panel(
+                generate_neo4j_oidc_config(self.config),
+                title="neo4j.conf OIDC Settings",
+                border_style="green",
+            )
+        )
+
+        return self.config
+
+    def _entra_setup(self) -> M2MConfig:
+        """Set up Entra ID M2M authentication."""
+        self.config.enabled = True
+        self.config.provider_type = "entra"
 
         # Detect tenant ID
         console.print("\n[cyan]Detecting Azure tenant...[/cyan]")
@@ -506,7 +655,7 @@ class M2MSetupWizard:
         self.config.tenant_id = tenant_id
 
         # Ask for setup method
-        console.print("\n[bold]Setup Options:[/bold]")
+        console.print("\n[bold]Entra ID Setup Options:[/bold]")
         console.print("  1. [cyan]Automatic[/cyan] - Create Entra ID apps using Azure CLI (Recommended)")
         console.print("  2. [cyan]Manual[/cyan] - Enter existing app registration IDs")
 

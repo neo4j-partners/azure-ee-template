@@ -11,7 +11,7 @@ Sample Azure Bicep templates for deploying Neo4j Enterprise Edition on Azure VM 
 - **Load Balancer**: Automatic load balancer for clusters (3+ nodes)
 - **Cloud-init**: VM provisioning via cloud-init (no custom script extensions)
 - **Security**: NSG with proper port configuration, SSRF protection
-- **M2M Bearer Token Authentication**: OAuth 2.0 machine-to-machine authentication via Microsoft Entra ID (Azure AD) for secure service-to-service connectivity
+- **M2M Bearer Token Authentication**: OAuth 2.0 machine-to-machine authentication via Keycloak or Microsoft Entra ID for secure service-to-service connectivity
 
 ## Prerequisites
 
@@ -54,7 +54,7 @@ cd ../deployments
 uv run neo4j-deploy cleanup --all --force
 ```
 
-> **Note:** The setup wizard includes optional M2M (Machine-to-Machine) bearer token authentication configuration via Microsoft Entra ID. See [M2M Bearer Token Authentication](#m2m-bearer-token-authentication) for details.
+> **Note:** The setup wizard includes optional M2M (Machine-to-Machine) bearer token authentication configuration via Keycloak or Microsoft Entra ID. See [M2M Bearer Token Authentication](#m2m-bearer-token-authentication) for details.
 
 ## Commands
 
@@ -147,8 +147,8 @@ Three password strategies are available:
 
 ```
 azure-ee-template/
-├── infra/                  # Azure infrastructure (Bicep templates)
-│   ├── main.bicep          # Main orchestrator template
+├── infra/                      # Azure infrastructure (Bicep templates)
+│   ├── main.bicep              # Main orchestrator template
 │   ├── modules/
 │   │   ├── network.bicep       # VNet, Subnet, NSG
 │   │   ├── identity.bicep      # Managed Identity
@@ -157,15 +157,26 @@ azure-ee-template/
 │   ├── cloud-init/
 │   │   ├── standalone.yaml     # Single-node configuration
 │   │   └── cluster.yaml        # Multi-node cluster configuration
-│   ├── bicepconfig.json    # Bicep linter rules
-│   └── parameters.json     # Sample parameters
-├── deployments/            # Deployment automation tools
-│   ├── neo4j_deploy.py     # Main CLI entry point
-│   ├── pyproject.toml      # Package configuration
-│   └── src/                # Source modules
-├── .env.sample             # Sample environment variables
-├── AUTH.md                 # Authentication guide (OIDC, SSO, M2M)
-└── FIX.md                  # Implementation notes
+│   ├── bicepconfig.json        # Bicep linter rules
+│   └── parameters.json         # Sample parameters
+├── deployments/                # Deployment CLI (Python/Typer)
+│   ├── neo4j_deploy.py         # Main CLI entry point
+│   ├── pyproject.toml          # Package configuration
+│   └── src/                    # Source modules
+├── keycloak-infra/             # Keycloak on Azure Container Apps
+│   ├── deploy.sh               # Deploy/status/test/cleanup script
+│   ├── main.bicep              # Bicep orchestrator for Keycloak
+│   ├── modules/                # Container App, identity, environment
+│   ├── Dockerfile              # Keycloak image with baked-in realm
+│   └── realm-export.json       # Pre-configured Neo4j realm
+├── oauth-java/                 # Java JDBC bearer token test client
+│   ├── run.sh                  # Reads deployment info, runs test
+│   ├── build.gradle.kts        # Gradle build (neo4j-jdbc driver)
+│   └── src/                    # KeycloakTestClient.java
+├── validate-bearer-token/      # Python bearer token validation
+│   └── validate_bearer.py      # Acquire token, connect to Neo4j
+├── keycloak-test-client/       # Python Keycloak token test client
+└── .deployments/               # Saved deployment details (gitignored)
 ```
 
 ## Outputs
@@ -178,72 +189,69 @@ After deployment, you'll receive:
 
 ## M2M Bearer Token Authentication
 
-The setup wizard includes an optional step to configure M2M (Machine-to-Machine) authentication using Microsoft Entra ID (Azure AD). This allows services, APIs, and automated processes to connect to Neo4j using OAuth 2.0 bearer tokens.
+The setup wizard includes an optional step to configure M2M (Machine-to-Machine) authentication. This allows services, APIs, and automated processes to connect to Neo4j using OAuth 2.0 bearer tokens. Two OIDC providers are supported:
+
+- **Keycloak** — Deploy Keycloak to Azure Container Apps, then the wizard reads OIDC values from the Keycloak deployment automatically
+- **Microsoft Entra ID** — Create app registrations via Azure CLI (automatic) or enter values manually
+
+During setup, the wizard presents three options:
+
+1. No M2M authentication
+2. Keycloak (reads from `keycloak-infra/.deployment.json`)
+3. Entra ID (automatic or manual Azure AD app registration)
+
+### Keycloak Setup
+
+Deploy Keycloak first, then run the Neo4j deployment wizard:
 
 ```bash
-# Run setup wizard (includes optional M2M configuration)
+# Deploy Keycloak to Azure Container Apps
+cd keycloak-infra
+./deploy.sh deploy
+
+# Verify Keycloak is running and tokens work
+./deploy.sh test
+
+# Run Neo4j setup — select "Keycloak" at the M2M step
+cd ../deployments
 uv run neo4j-deploy setup
+
+# Deploy Neo4j (OIDC config is injected into neo4j.conf via cloud-init)
+uv run neo4j-deploy deploy --scenario standalone-v2025
 ```
 
-During setup, you'll be asked:
-1. **Would you like to configure M2M bearer token authentication?** - Choose yes to enable
-2. **Automatic or Manual setup?** - Automatic uses Azure CLI to create Entra ID apps
+The wizard reads `keycloak-infra/.deployment.json` and configures the OIDC provider, discovery URI, audience, role mapping, and client credentials automatically.
 
-### What the Automatic Setup Does
+See [keycloak-infra/README.md](keycloak-infra/README.md) for Keycloak deployment details.
+
+### Entra ID Setup
 
 The wizard uses Azure CLI (`az`) commands to:
 
-1. **Detect your Azure tenant** - Auto-detects tenant ID from your current `az login` session
-2. **Create an API app registration** - Represents Neo4j as an API resource with app roles:
-   - `Neo4j.Admin` - Full administrative access
-   - `Neo4j.ReadWrite` - Read and write data access
-   - `Neo4j.ReadOnly` - Read-only access
-3. **Create a client app registration** - For your service to authenticate
-4. **Generate a client secret** - For the client app (saved securely, shown once)
-5. **Grant API permissions** - Assigns the appropriate role to the client app
-
-### After Setup
-
-The M2M configuration is automatically included in deployments. Your services can authenticate using:
-
-```python
-from msal import ConfidentialClientApplication
-from neo4j import GraphDatabase, bearer_auth
-
-# Get token from Entra ID
-app = ConfidentialClientApplication(
-    CLIENT_ID,
-    authority=f"https://login.microsoftonline.com/{TENANT_ID}",
-    client_credential=CLIENT_SECRET,
-)
-result = app.acquire_token_for_client(scopes=["api://neo4j-m2m/.default"])
-
-# Connect to Neo4j with bearer token
-driver = GraphDatabase.driver(NEO4J_URI, auth=bearer_auth(result["access_token"]))
-```
-
-For detailed M2M configuration guides, see:
-- [M2M.md](M2M.md) - Comprehensive M2M setup guide
-- [M2M_v2.md](M2M_v2.md) - Quick guide specific to this deployment
+1. Detect your Azure tenant from your current `az login` session
+2. Create an API app registration with Neo4j roles (`Neo4j.Admin`, `Neo4j.ReadWrite`, `Neo4j.ReadOnly`)
+3. Create a client app registration and generate a client secret
+4. Grant API permissions and assign roles
 
 ### Validating Bearer Token Authentication
 
-After deployment, validate M2M authentication works:
+**Python (both providers):**
 
 ```bash
-# Set your client secret (from setup wizard)
-export NEO4J_CLIENT_SECRET="your-client-secret"
-
-# Run validation
 cd validate-bearer-token
 uv run validate_bearer.py --scenario standalone-v2025
 ```
 
-The validation script will:
-1. Load deployment config from `.deployments/standalone-v2025.json`
-2. Acquire a bearer token from Entra ID
-3. Test Neo4j connection with the token
-4. Display the authenticated user's roles
+The script detects the provider type from `.deployments/standalone-v2025.json` and acquires a token from the correct endpoint.
+
+**Java JDBC (Keycloak):**
+
+```bash
+cd oauth-java
+./run.sh
+```
+
+The script reads deployment info, acquires a Keycloak token, and connects to Neo4j using the [Neo4j JDBC driver](https://github.com/neo4j/neo4j-jdbc) with `authScheme=bearer`. It verifies the connection and displays the OIDC-mapped roles.
 
 ## License
 

@@ -62,16 +62,31 @@ def save_deployment_details(conn_info, deployment_state, settings=None) -> Path:
 
     # Add M2M authentication info if configured
     if settings and settings.m2m and settings.m2m.enabled:
-        details["m2m_auth"] = {
-            "enabled": True,
-            "tenant_id": settings.m2m.tenant_id,
-            "api_app_id": settings.m2m.api_app_id,
-            "audience": settings.m2m.audience,
-            "client_app_id": settings.m2m.client_app_id,
-            "token_endpoint": f"https://login.microsoftonline.com/{settings.m2m.tenant_id}/oauth2/v2.0/token",
-            "scope": f"{settings.m2m.audience}/.default",
-            "well_known_uri": f"https://login.microsoftonline.com/{settings.m2m.tenant_id}/v2.0/.well-known/openid-configuration",
-        }
+        m2m = settings.m2m
+        if m2m.provider_type == "keycloak":
+            details["m2m_auth"] = {
+                "enabled": True,
+                "provider_type": "keycloak",
+                "discovery_uri": m2m.discovery_uri,
+                "token_endpoint": m2m.token_endpoint,
+                "audience": m2m.audience,
+                "client_id": m2m.client_id,
+                "client_secret": m2m.client_secret,
+                "role_mapping": m2m.role_mapping,
+                "display_name": m2m.display_name,
+            }
+        else:
+            details["m2m_auth"] = {
+                "enabled": True,
+                "provider_type": "entra",
+                "tenant_id": m2m.tenant_id,
+                "api_app_id": m2m.api_app_id,
+                "audience": m2m.audience,
+                "client_app_id": m2m.client_app_id,
+                "token_endpoint": f"https://login.microsoftonline.com/{m2m.tenant_id}/oauth2/v2.0/token",
+                "scope": f"{m2m.audience}/.default",
+                "well_known_uri": f"https://login.microsoftonline.com/{m2m.tenant_id}/v2.0/.well-known/openid-configuration",
+            }
     else:
         details["m2m_auth"] = {"enabled": False}
 

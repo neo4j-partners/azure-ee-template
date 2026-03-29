@@ -130,6 +130,9 @@ dist/
 build/
 *.whl
 
+# Gradle
+.gradle/
+
 # =============================================================================
 # Environment & Secrets
 # =============================================================================
@@ -150,6 +153,10 @@ deployments/.arm-testing/
 
 # Deployment details (contains credentials)
 .deployments/
+**/.deployment.json
+
+# Compiled ARM templates from Bicep (any subdirectory)
+keycloak-infra/*.json
 
 # Terraform (if used alongside Bicep)
 *.tfstate

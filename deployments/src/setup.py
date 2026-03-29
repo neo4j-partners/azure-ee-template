@@ -88,12 +88,25 @@ class SetupWizard:
         # Convert M2MConfig to M2MSettings model
         m2m_settings = M2MSettings(
             enabled=m2m_config.enabled,
+            provider_type=m2m_config.provider_type,
+            # Entra ID fields
             tenant_id=m2m_config.tenant_id,
             api_app_id=m2m_config.api_app_id,
             api_app_name=m2m_config.api_app_name,
             audience=m2m_config.audience,
             client_app_id=m2m_config.client_app_id,
             client_app_name=m2m_config.client_app_name,
+            # Generic OIDC fields (Keycloak)
+            discovery_uri=m2m_config.discovery_uri,
+            token_endpoint=m2m_config.token_endpoint,
+            client_id=m2m_config.client_id,
+            client_secret=m2m_config.client_secret,
+            username_claim=m2m_config.username_claim,
+            groups_claim=m2m_config.groups_claim,
+            role_mapping=m2m_config.role_mapping,
+            token_type_config=m2m_config.token_type_config,
+            display_name=m2m_config.display_name,
+            oidc_visible=m2m_config.oidc_visible,
         )
 
         # Step 8: Finalize

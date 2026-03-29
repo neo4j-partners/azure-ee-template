@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from msal import ConfidentialClientApplication
+import requests
 from neo4j import GraphDatabase, bearer_auth
 from neo4j.exceptions import AuthError, ServiceUnavailable
 from rich.console import Console
@@ -87,14 +87,14 @@ def load_deployment_config(scenario: str, deployments_dir: Path = DEFAULT_DEPLOY
         return json.load(f)
 
 
-def get_bearer_token(
+def get_bearer_token_entra(
     tenant_id: str,
     client_id: str,
     client_secret: str,
     scope: str,
 ) -> tuple[str, int]:
     """
-    Acquire bearer token from Microsoft Entra ID using client credentials flow.
+    Acquire bearer token from Microsoft Entra ID using MSAL client credentials flow.
 
     Args:
         tenant_id: Azure tenant ID
@@ -108,6 +108,8 @@ def get_bearer_token(
     Raises:
         Exception: If token acquisition fails
     """
+    from msal import ConfidentialClientApplication
+
     authority = f"https://login.microsoftonline.com/{tenant_id}"
 
     app = ConfidentialClientApplication(
@@ -118,6 +120,48 @@ def get_bearer_token(
 
     result = app.acquire_token_for_client(scopes=[scope])
 
+    if "access_token" not in result:
+        error = result.get("error", "Unknown error")
+        error_description = result.get("error_description", "No description")
+        raise Exception(f"Token acquisition failed: {error}\n{error_description}")
+
+    return result["access_token"], result.get("expires_in", 0)
+
+
+def get_bearer_token_oidc(
+    token_endpoint: str,
+    client_id: str,
+    client_secret: str,
+) -> tuple[str, int]:
+    """
+    Acquire bearer token via plain HTTP POST (client credentials grant).
+    Works with any OIDC provider including Keycloak.
+
+    Args:
+        token_endpoint: Token endpoint URL
+        client_id: Client ID
+        client_secret: Client secret
+
+    Returns:
+        Tuple of (access_token, expires_in_seconds)
+
+    Raises:
+        Exception: If token acquisition fails
+    """
+    resp = requests.post(
+        token_endpoint,
+        data={
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        },
+        timeout=30,
+    )
+
+    if resp.status_code != 200:
+        raise Exception(f"Token acquisition failed (HTTP {resp.status_code}): {resp.text}")
+
+    result = resp.json()
     if "access_token" not in result:
         error = result.get("error", "Unknown error")
         error_description = result.get("error_description", "No description")
@@ -150,13 +194,12 @@ def test_neo4j_connection(
         # Run a simple query to verify auth works
         with driver.session() as session:
             # Get current user info
-            result = session.run("CALL dbms.showCurrentUser()")
+            result = session.run("SHOW CURRENT USER")
             user_record = result.single()
 
             user_info = {
-                "username": user_record["username"],
+                "username": user_record["user"],
                 "roles": list(user_record["roles"]),
-                "flags": list(user_record.get("flags", [])),
             }
 
             # Run a simple data query
@@ -264,9 +307,16 @@ def main():
     table.add_row("M2M Enabled", str(m2m.get("enabled", False)))
 
     if m2m.get("enabled"):
-        table.add_row("Tenant ID", m2m.get("tenant_id", "Not set"))
-        table.add_row("Client App ID", m2m.get("client_app_id", "Not set"))
-        table.add_row("Audience", m2m.get("audience", "Not set"))
+        provider = m2m.get("provider_type", "entra")
+        table.add_row("Provider", provider)
+        if provider == "keycloak":
+            table.add_row("Token Endpoint", m2m.get("token_endpoint", "Not set"))
+            table.add_row("Client ID", m2m.get("client_id", "Not set"))
+            table.add_row("Audience", m2m.get("audience", "Not set"))
+        else:
+            table.add_row("Tenant ID", m2m.get("tenant_id", "Not set"))
+            table.add_row("Client App ID", m2m.get("client_app_id", "Not set"))
+            table.add_row("Audience", m2m.get("audience", "Not set"))
 
     console.print(table)
 
@@ -301,7 +351,12 @@ def main():
         sys.exit(0)
 
     # Get client secret
+    provider_type = m2m.get("provider_type", "entra")
+
+    # For Keycloak, try reading secret from deployment info first
     client_secret = args.secret or os.environ.get("NEO4J_CLIENT_SECRET")
+    if not client_secret and provider_type == "keycloak":
+        client_secret = m2m.get("client_secret")
 
     if not client_secret:
         console.print(
@@ -309,9 +364,7 @@ def main():
                 "[red]Client secret is required for M2M authentication.[/red]\n\n"
                 "Provide it via:\n"
                 "  1. Environment variable: [cyan]export NEO4J_CLIENT_SECRET='your-secret'[/cyan]\n"
-                "  2. Command line argument: [cyan]--secret 'your-secret'[/cyan]\n\n"
-                "The client secret was displayed during setup. If lost, generate a new one:\n"
-                f"  [cyan]az ad app credential reset --id {m2m.get('client_app_id', 'CLIENT_ID')} --display-name 'New Secret' --years 1[/cyan]",
+                "  2. Command line argument: [cyan]--secret 'your-secret'[/cyan]",
                 title="Client Secret Required",
                 border_style="red",
             )
@@ -320,16 +373,23 @@ def main():
 
     # Acquire bearer token
     console.print(f"\n[bold]Acquiring Bearer Token[/bold]")
+    console.print(f"[dim]Provider: {provider_type}[/dim]")
     console.print(f"[dim]Token endpoint: {m2m.get('token_endpoint')}[/dim]")
-    console.print(f"[dim]Scope: {m2m.get('scope')}[/dim]")
 
     try:
-        token, expires_in = get_bearer_token(
-            tenant_id=m2m.get("tenant_id"),
-            client_id=m2m.get("client_app_id"),
-            client_secret=client_secret,
-            scope=m2m.get("scope"),
-        )
+        if provider_type == "keycloak":
+            token, expires_in = get_bearer_token_oidc(
+                token_endpoint=m2m.get("token_endpoint"),
+                client_id=m2m.get("client_id"),
+                client_secret=client_secret,
+            )
+        else:
+            token, expires_in = get_bearer_token_entra(
+                tenant_id=m2m.get("tenant_id"),
+                client_id=m2m.get("client_app_id"),
+                client_secret=client_secret,
+                scope=m2m.get("scope"),
+            )
         console.print(f"[green]Token acquired successfully[/green]")
         console.print(f"[dim]Expires in: {expires_in} seconds[/dim]")
         console.print(f"[dim]Token (first 50 chars): {token[:50]}...[/dim]")
@@ -375,8 +435,8 @@ def main():
             Panel(
                 f"[bold green]Token Acquisition Successful![/bold green]\n\n"
                 f"Token Type: Bearer\n"
-                f"Expires In: {expires_in} seconds\n"
-                f"Scope: {m2m.get('scope')}\n\n"
+                f"Provider: {provider_type}\n"
+                f"Expires In: {expires_in} seconds\n\n"
                 f"[dim]Token preview: {token[:80]}...[/dim]",
                 title="Token Validated",
                 border_style="green",
@@ -384,7 +444,13 @@ def main():
         )
 
         # Show equivalent curl command
-        curl_cmd = f'''curl -X POST "https://login.microsoftonline.com/{m2m.get("tenant_id")}/oauth2/v2.0/token" \\
+        if provider_type == "keycloak":
+            curl_cmd = f'''curl -X POST "{m2m.get("token_endpoint")}" \\
+  -d "grant_type=client_credentials" \\
+  -d "client_id={m2m.get("client_id")}" \\
+  -d "client_secret=<YOUR_SECRET>"'''
+        else:
+            curl_cmd = f'''curl -X POST "https://login.microsoftonline.com/{m2m.get("tenant_id")}/oauth2/v2.0/token" \\
   -d "grant_type=client_credentials" \\
   -d "client_id={m2m.get("client_app_id")}" \\
   -d "client_secret=<YOUR_SECRET>" \\
@@ -418,7 +484,34 @@ def main():
 
         # Show example code
         console.print(f"\n[bold]Example Python Code[/bold]")
-        example_code = f'''
+        if provider_type == "keycloak":
+            example_code = f'''
+import requests
+from neo4j import GraphDatabase, bearer_auth
+
+# Configuration
+TOKEN_ENDPOINT = "{m2m.get('token_endpoint')}"
+CLIENT_ID = "{m2m.get('client_id')}"
+CLIENT_SECRET = "your-client-secret"
+NEO4J_URI = "{conn.get('neo4j_uri')}"
+
+# Get token
+resp = requests.post(TOKEN_ENDPOINT, data={{
+    "grant_type": "client_credentials",
+    "client_id": CLIENT_ID,
+    "client_secret": CLIENT_SECRET,
+}})
+token = resp.json()["access_token"]
+
+# Connect to Neo4j
+driver = GraphDatabase.driver(NEO4J_URI, auth=bearer_auth(token))
+with driver.session() as session:
+    result = session.run("MATCH (n) RETURN count(n)")
+    print(result.single()[0])
+driver.close()
+'''
+        else:
+            example_code = f'''
 from msal import ConfidentialClientApplication
 from neo4j import GraphDatabase, bearer_auth
 

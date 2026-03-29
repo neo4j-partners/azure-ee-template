@@ -242,12 +242,37 @@ class DeploymentEngine:
             return "none"
 
         m2m = self.settings.m2m
+
+        if m2m.provider_type == "keycloak":
+            if not m2m.discovery_uri or not m2m.audience or not m2m.role_mapping:
+                console.print("[yellow]Keycloak M2M enabled but missing discovery_uri, audience, or role_mapping, skipping OIDC config[/yellow]")
+                return "none"
+
+            visible = "true" if m2m.oidc_visible else "false"
+            config_lines = [
+                "",
+                f"# M2M OIDC Authentication ({m2m.display_name})",
+                "# Auto-configured by neo4j-deploy",
+                "dbms.security.authentication_providers=oidc-m2m,native",
+                "dbms.security.authorization_providers=oidc-m2m,native",
+                f"dbms.security.oidc.m2m.visible={visible}",
+                f"dbms.security.oidc.m2m.display_name={m2m.display_name}",
+                f"dbms.security.oidc.m2m.well_known_discovery_uri={m2m.discovery_uri}",
+                f"dbms.security.oidc.m2m.audience={m2m.audience}",
+                f"dbms.security.oidc.m2m.claims.username={m2m.username_claim}",
+                f"dbms.security.oidc.m2m.claims.groups={m2m.groups_claim}",
+                f"dbms.security.oidc.m2m.config={m2m.token_type_config}",
+                f"dbms.security.oidc.m2m.authorization.group_to_role_mapping={m2m.role_mapping}",
+            ]
+
+            return "\\n".join(config_lines)
+
+        # Entra ID path
         if not m2m.tenant_id or not m2m.audience:
             console.print("[yellow]M2M enabled but missing tenant_id or audience, skipping OIDC config[/yellow]")
             return "none"
 
         # Generate the OIDC configuration block (escaped for shell)
-        # Note: This is appended to neo4j.conf in cloud-init
         # IMPORTANT: Use v1.0 discovery endpoint because Azure AD client credentials
         # flow returns v1.0 tokens by default (issuer: https://sts.windows.net/{tenant}/)
         config_lines = [
