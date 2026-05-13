@@ -60,6 +60,69 @@ runcmd:
   # Install APOC plugin
   - mv /var/lib/neo4j/labs/apoc-*-core.jar /var/lib/neo4j/plugins/
 
+  # Install Bloom + GDS plugins and fetch their licenses from Key Vault.
+  # Both blocks are no-ops when ${install_bloom} / ${install_gds} are 'false'.
+  # The VM's user-assigned managed identity must have Key Vault Secrets User
+  # on the license KV; main.bicep grants this via kv-role-assignment.
+  - |
+    INSTALL_BLOOM='${install_bloom}'
+    INSTALL_GDS='${install_gds}'
+    KV_NAME='${kv_name}'
+    BLOOM_SECRET='${bloom_secret_name}'
+    GDS_SECRET='${gds_secret_name}'
+
+    if [ "$INSTALL_BLOOM" = "true" ] || [ "$INSTALL_GDS" = "true" ]; then
+      if ! command -v jq >/dev/null 2>&1; then
+        echo "Installing jq for Key Vault fetch..."
+        dnf install -y jq
+      fi
+      mkdir -p /var/lib/neo4j/licenses
+      fetch_kv_secret() {
+        local name=$1 dest=$2
+        local imds="http://169.254.169.254/metadata/identity/oauth2/token"
+        local kv_url="https://${KV_NAME}.vault.azure.net/secrets/${name}?api-version=7.4"
+        # Retry covers IAM propagation after the deploy-time role assignment.
+        # 20 × 30s = 10 min to tolerate slow cross-RG role propagation.
+        local i token
+        for i in $(seq 1 20); do
+          token=$(curl -sS -H "Metadata: true" \
+            "${imds}?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net" \
+            | jq -r '.access_token // empty')
+          if [ -n "$token" ]; then
+            if curl -sS -H "Authorization: Bearer ${token}" "$kv_url" \
+                 | jq -r '.value // empty' | tr -d '\n' > "$dest" \
+               && [ -s "$dest" ]; then
+              return 0
+            fi
+          fi
+          echo "  fetch $name attempt $i failed; sleeping 30s..."
+          sleep 30
+        done
+        echo "ERROR: failed to fetch $name from $KV_NAME after 20 attempts"
+        return 1
+      }
+    fi
+
+    if [ "$INSTALL_BLOOM" = "true" ]; then
+      echo "Installing Bloom plugin..."
+      cp /var/lib/neo4j/products/bloom-plugin-*.jar /var/lib/neo4j/plugins/
+      chown neo4j:neo4j /var/lib/neo4j/plugins/bloom-plugin-*.jar
+      fetch_kv_secret "$BLOOM_SECRET" /var/lib/neo4j/licenses/neo4j-bloom.license
+      chown neo4j:neo4j /var/lib/neo4j/licenses/neo4j-bloom.license
+      chmod 640 /var/lib/neo4j/licenses/neo4j-bloom.license
+      echo "dbms.bloom.license_file=/var/lib/neo4j/licenses/neo4j-bloom.license" >> /etc/neo4j/neo4j.conf
+    fi
+
+    if [ "$INSTALL_GDS" = "true" ]; then
+      echo "Installing Graph Data Science plugin..."
+      cp /var/lib/neo4j/products/neo4j-graph-data-science-*.jar /var/lib/neo4j/plugins/
+      chown neo4j:neo4j /var/lib/neo4j/plugins/neo4j-graph-data-science-*.jar
+      fetch_kv_secret "$GDS_SECRET" /var/lib/neo4j/licenses/neo4j-gds.license
+      chown neo4j:neo4j /var/lib/neo4j/licenses/neo4j-gds.license
+      chmod 640 /var/lib/neo4j/licenses/neo4j-gds.license
+      echo "gds.enterprise.license_file=/var/lib/neo4j/licenses/neo4j-gds.license" >> /etc/neo4j/neo4j.conf
+    fi
+
   # Configure Neo4j network settings
   # Use grep to check if settings exist, then append if not already configured
   - sed -i 's/^#*server\.default_listen_address=.*/server.default_listen_address=0.0.0.0/g' /etc/neo4j/neo4j.conf
@@ -76,7 +139,7 @@ runcmd:
 
   # Configure extensions and security
   - sed -i 's~#server.unmanaged_extension_classes=org.neo4j.examples.server.unmanaged=/examples/unmanaged~server.unmanaged_extension_classes=com.neo4j.bloom.server=/bloom,semantics.extension=/rdf~g' /etc/neo4j/neo4j.conf
-  - sed -i 's/#dbms.security.procedures.unrestricted=my.extensions.example,my.procedures.*/dbms.security.procedures.unrestricted=gds.*,apoc.*/g' /etc/neo4j/neo4j.conf
+  - sed -i 's/#dbms.security.procedures.unrestricted=my.extensions.example,my.procedures.*/dbms.security.procedures.unrestricted=gds.*,apoc.*,bloom.*/g' /etc/neo4j/neo4j.conf
   - echo "dbms.security.http_auth_allowlist=/,/browser.*,/bloom.*" >> /etc/neo4j/neo4j.conf
   - echo "dbms.security.procedures.allowlist=apoc.*,gds.*,bloom.*" >> /etc/neo4j/neo4j.conf
 
@@ -138,6 +201,70 @@ runcmd:
       sleep 5
     done
   - echo "Neo4j is ready!"
+
+  # Verify Bloom + GDS licenses are recognised by the running Neo4j instance.
+  # Skipped when neither plugin was installed. Failure here means the deploy
+  # claims success but the plugins are silently broken — log loudly, write a
+  # status marker for operators and `bicep-deploy verify` to read, and exit
+  # non-zero so cloud-init's runcmd state reflects the failure.
+  - |
+    INSTALL_BLOOM='${install_bloom}'
+    INSTALL_GDS='${install_gds}'
+    if [ "$INSTALL_BLOOM" != "true" ] && [ "$INSTALL_GDS" != "true" ]; then
+      exit 0
+    fi
+    PASSWORD_BASE64='${admin_password}'
+    ADMIN_PASSWORD=$(echo "$PASSWORD_BASE64" | base64 -d)
+    STATUS_FILE=/var/lib/neo4j/license-status
+    : > "$STATUS_FILE"
+    chown neo4j:neo4j "$STATUS_FILE"
+    LICENSE_OK=true
+
+    # Run a Cypher query expected to return a single boolean column and check
+    # the last non-empty line equals "TRUE". Using exact-line match avoids the
+    # false-positive trap where "invalid" matches grep for "valid".
+    cypher_returns_true() {
+      local query=$1 out last
+      for i in 1 2 3 4 5 6; do
+        out=$(cypher-shell -a bolt://localhost:7687 -u neo4j -p "$ADMIN_PASSWORD" \
+              --format plain --non-interactive "$query" 2>&1 || true)
+        last=$(echo "$out" | grep -v '^$' | tail -1)
+        if [ "$last" = "TRUE" ]; then
+          echo "$out"
+          return 0
+        fi
+        echo "  retry $i: $out"
+        sleep 5
+      done
+      echo "$out"
+      return 1
+    }
+
+    if [ "$INSTALL_BLOOM" = "true" ]; then
+      echo "=== Verifying Bloom license ==="
+      if cypher_returns_true 'CALL bloom.checkLicenseCompliance() YIELD success RETURN success;'; then
+        echo "Bloom: PASS" | tee -a "$STATUS_FILE"
+      else
+        echo "Bloom: FAIL" | tee -a "$STATUS_FILE"
+        LICENSE_OK=false
+      fi
+    fi
+
+    if [ "$INSTALL_GDS" = "true" ]; then
+      echo "=== Verifying GDS license ==="
+      if cypher_returns_true 'RETURN gds.isLicensed() AS l;'; then
+        echo "GDS: PASS" | tee -a "$STATUS_FILE"
+      else
+        echo "GDS: FAIL" | tee -a "$STATUS_FILE"
+        LICENSE_OK=false
+      fi
+    fi
+
+    if [ "$LICENSE_OK" != "true" ]; then
+      echo "ERROR: license verification failed; see $STATUS_FILE"
+      exit 1
+    fi
+    echo "All license verifications passed."
 
 write_files:
   - path: /var/log/neo4j-cloud-init.log

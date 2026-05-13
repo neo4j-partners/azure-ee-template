@@ -205,6 +205,85 @@ A Databricks workspace with VNet injection and private VNet peering to an existi
 
 You can modify `scenarios.yaml` to add custom scenarios or adjust any of these defaults.
 
+### Installing Bloom and Graph Data Science with licenses
+
+Both Bloom and GDS Enterprise need a license JWT to run in licensed mode (otherwise Bloom procedures error out and GDS falls back to its Community edition feature set). Set `install_bloom: true` and/or `install_graph_data_science: true` on a scenario, point the deployer at a Key Vault that holds the license JWTs as secrets, and the VM fetches them at boot via its user-assigned managed identity.
+
+#### 1. Stage the license JWTs in a Key Vault
+
+Once per subscription. The vault lives in any resource group (typically a long-lived one separate from per-deployment RGs):
+
+```bash
+RG=neo4j-licenses
+LOCATION=westus
+KV=neo4j-licenses-${RANDOM}
+
+az group create   --name "$RG" --location "$LOCATION"
+az keyvault create --name "$KV" --resource-group "$RG" --location "$LOCATION" \
+  --enable-rbac-authorization true --retention-days 7
+
+# Grant yourself secret-write access.
+KV_SCOPE=$(az keyvault show --name "$KV" --resource-group "$RG" --query id -o tsv)
+MY_OID=$(az ad signed-in-user show --query id -o tsv)
+az role assignment create --assignee-object-id "$MY_OID" --assignee-principal-type User \
+  --role "Key Vault Secrets Officer" --scope "$KV_SCOPE"
+
+az keyvault secret set --vault-name "$KV" --name bloom-license --file /path/to/bloom.license
+az keyvault secret set --vault-name "$KV" --name gds-license   --file /path/to/gds.license
+```
+
+#### 2. Point `settings.yaml` at the vault
+
+Add the vault name and resource group to `.arm-testing/config/settings.yaml`:
+
+```yaml
+license_key_vault_name: neo4j-licenses-1234
+license_key_vault_resource_group: neo4j-licenses
+```
+
+These are account-wide; one vault can serve any number of scenarios and deployments.
+
+#### 3. Opt-in per scenario
+
+Add to a scenario in `.arm-testing/config/scenarios.yaml`:
+
+```yaml
+scenarios:
+  - name: standalone-v2025
+    deployment_type: vm
+    node_count: 1
+    # ... existing fields ...
+    install_bloom: true
+    install_graph_data_science: true
+    bloom_license_secret_name: bloom-license   # KV secret name; defaults shown
+    gds_license_secret_name: gds-license       #   are matched if omitted
+```
+
+`install_bloom` and `install_graph_data_science` default to `false`, so unrelated scenarios are unaffected.
+
+#### What happens at deploy time
+
+- `main.bicep` deploys a `kv-role-assignment` module that grants the per-deployment user-assigned managed identity `Key Vault Secrets User` on the license Key Vault (cross-RG; `Microsoft.Authorization/roleAssignments/write` is required on the KV's RG).
+- The cloud-init `runcmd` for plugin install copies `bloom-plugin-*.jar` and `neo4j-graph-data-science-*.jar` out of `/var/lib/neo4j/products/` (bundled by the BYOL image) into `/var/lib/neo4j/plugins/`.
+- It fetches the license JWTs from the vault using IMDS-issued managed-identity tokens and the Key Vault REST API. The fetch retries for ~10 minutes to absorb cross-RG role-assignment propagation delay.
+- It writes `dbms.bloom.license_file` and `gds.enterprise.license_file` into `/etc/neo4j/neo4j.conf`.
+- After Neo4j is up, cloud-init runs `cypher-shell` against `bloom.checkLicenseCompliance()` and `gds.isLicensed()`. If either fails, cloud-init exits non-zero, writes `/var/lib/neo4j/license-status` with FAIL markers, and the runcmd state reflects the failure for `bicep-deploy verify` to surface.
+
+#### Verifying on a deployed VM
+
+```bash
+RG=$(jq -r .resource_group ../.deployments/<scenario>-bicep.json)
+VMSS=$(az vmss list --resource-group "$RG" --query '[0].name' -o tsv)
+az vmss run-command invoke --resource-group "$RG" --name "$VMSS" --instance-id 0 \
+  --command-id RunShellScript --scripts 'cat /var/lib/neo4j/license-status'
+```
+
+Expected output:
+```
+Bloom: PASS
+GDS: PASS
+```
+
 ## Template Parameters
 
 | Parameter | Description | Default |

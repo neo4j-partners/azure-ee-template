@@ -80,11 +80,19 @@ class TestScenario(BaseModel):
     read_replica_vm_size: Optional[str] = Field(None, description="VM size for read replicas")
     read_replica_disk_size: int = Field(32, ge=32, description="Disk size for read replicas")
 
-    # Plugin settings
-    install_graph_data_science: bool = Field(False, description="Install GDS plugin")
-    graph_data_science_license_key: str = Field("None", description="GDS license key")
-    install_bloom: bool = Field(False, description="Install Bloom")
-    bloom_license_key: str = Field("None", description="Bloom license key")
+    # Plugin settings. License JWTs are stored in Settings.license_key_vault_name
+    # and fetched at boot via the VM's user-assigned managed identity. The
+    # *_license_secret_name fields name the Key Vault secret that holds each JWT.
+    install_graph_data_science: bool = Field(False, description="Install the Graph Data Science plugin.")
+    gds_license_secret_name: str = Field(
+        "gds-license",
+        description="Key Vault secret containing the GDS Enterprise license JWT. Used only when install_graph_data_science is true.",
+    )
+    install_bloom: bool = Field(False, description="Install the Bloom plugin.")
+    bloom_license_secret_name: str = Field(
+        "bloom-license",
+        description="Key Vault secret containing the Bloom license JWT. Used only when install_bloom is true.",
+    )
 
     # Databricks peering fields (only used when deployment_type is databricks-peering)
     source_scenario: Optional[str] = Field(None, description="Source Neo4j scenario to peer with")
@@ -190,6 +198,19 @@ class Settings(BaseModel):
     m2m: Optional[M2MSettings] = Field(
         default_factory=lambda: M2MSettings(),
         description="M2M bearer token authentication settings"
+    )
+
+    # Account-wide Key Vault that holds licensed-plugin JWTs as secrets.
+    # Required when any scenario sets install_bloom or install_graph_data_science.
+    # The Bicep template grants the per-deployment UAMI Key Vault Secrets User
+    # on this vault at deploy time; cloud-init then fetches via managed identity.
+    # The per-secret names live on TestScenario so scenarios can point at
+    # different license SKUs (e.g. trial vs. production) against the same vault.
+    license_key_vault_name: Optional[str] = Field(
+        None, description="Key Vault holding the Bloom and GDS license JWTs as secrets."
+    )
+    license_key_vault_resource_group: Optional[str] = Field(
+        None, description="Resource group of the license Key Vault. May differ from deployment RG."
     )
 
 

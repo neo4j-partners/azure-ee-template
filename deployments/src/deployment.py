@@ -254,6 +254,27 @@ class DeploymentEngine:
         # VM-specific parameters
         set_param("vmSize", scenario.vm_size)
 
+        # Bloom + GDS install flags. When either is set, Bicep grants the
+        # per-deployment UAMI access to the license Key Vault via cross-RG role
+        # assignment, then cloud-init fetches the license JWTs over the
+        # managed-identity path. KV name + RG come from Settings (account-wide);
+        # secret names come from TestScenario (per-scenario).
+        if scenario.install_bloom or scenario.install_graph_data_science:
+            kv_name = self.settings.license_key_vault_name
+            kv_rg = self.settings.license_key_vault_resource_group
+            if not kv_name or not kv_rg:
+                raise ValueError(
+                    "Scenario has install_bloom or install_graph_data_science set, but "
+                    "license_key_vault_name / license_key_vault_resource_group are not "
+                    "configured in settings.yaml."
+                )
+            set_param("installBloom", scenario.install_bloom)
+            set_param("installGds", scenario.install_graph_data_science)
+            set_param("keyVaultName", kv_name)
+            set_param("keyVaultResourceGroup", kv_rg)
+            set_param("bloomSecretName", scenario.bloom_license_secret_name)
+            set_param("gdsSecretName", scenario.gds_license_secret_name)
+
         return params
 
     def _inject_dynamic_values(

@@ -47,8 +47,27 @@ param publicIpEnabled bool = true
 @description('Enable the Neo4j HTTP connector on port 7474. Set to false to serve the browser exclusively over HTTPS (7473).')
 param enableHttp bool = true
 
+@description('Install the Bloom plugin from /var/lib/neo4j/products/ and configure its license file path. Requires the license JWT to live in Key Vault at the secret name given by bloomSecretName.')
+param installBloom bool = false
+
+@description('Install the Graph Data Science plugin from /var/lib/neo4j/products/ and configure the enterprise license file path.')
+param installGds bool = false
+
+@description('Key Vault name holding the Bloom and/or GDS license JWTs. Required when installBloom or installGds is true.')
+param keyVaultName string = ''
+
+@description('Resource group of the Key Vault. Used so the per-deployment UAMI can be granted Key Vault Secrets User via cross-RG role assignment.')
+param keyVaultResourceGroup string = ''
+
+@description('Key Vault secret name containing the Bloom license JWT.')
+param bloomSecretName string = 'bloom-license'
+
+@description('Key Vault secret name containing the GDS Enterprise license JWT.')
+param gdsSecretName string = 'gds-license'
+
 var deploymentUniqueId = uniqueString(resourceGroup().id, deployment().name)
 var resourceSuffix = deploymentUniqueId
+var needsKvAccess = installBloom || installGds
 
 module network 'modules/network.bicep' = {
   name: 'network-deployment'
@@ -64,6 +83,20 @@ module identity 'modules/identity.bicep' = {
   params: {
     location: location
     resourceSuffix: resourceSuffix
+  }
+}
+
+// Cross-RG role assignment: grant the per-deployment UAMI Key Vault Secrets User
+// on the license Key Vault. Only deployed when Bloom or GDS licenses need to
+// be fetched. The license KV typically lives in a separate RG (so the same
+// vault can be reused across many deployments), so we deploy this module at
+// that RG's scope via the `scope: resourceGroup(...)` form.
+module keyVaultAccess 'modules/kv-role-assignment.bicep' = if (needsKvAccess) {
+  name: 'kv-role-assignment'
+  scope: resourceGroup(keyVaultResourceGroup)
+  params: {
+    keyVaultName: keyVaultName
+    principalId: identity.outputs.identityPrincipalId
   }
 }
 
@@ -100,7 +133,12 @@ var cloudInitStep4 = replace(cloudInitStep3, '\${license_agreement}', licenseAgr
 var cloudInitStep5 = replace(cloudInitStep4, '\${node_count}', string(nodeCount))
 var cloudInitStep6 = replace(cloudInitStep5, '\${oidc_config}', oidcConfig)
 var cloudInitStep7 = replace(cloudInitStep6, '\${disable_http_config}', enableHttp ? '' : 'server.http.enabled=false')
-var cloudInitData = cloudInitStep7
+var cloudInitStep8 = replace(cloudInitStep7, '\${install_bloom}', installBloom ? 'true' : 'false')
+var cloudInitStep9 = replace(cloudInitStep8, '\${install_gds}', installGds ? 'true' : 'false')
+var cloudInitStep10 = replace(cloudInitStep9, '\${kv_name}', keyVaultName)
+var cloudInitStep11 = replace(cloudInitStep10, '\${bloom_secret_name}', bloomSecretName)
+var cloudInitStep12 = replace(cloudInitStep11, '\${gds_secret_name}', gdsSecretName)
+var cloudInitData = cloudInitStep12
 var cloudInitBase64 = base64(cloudInitData)
 
 module vmss 'modules/vmss.bicep' = {
