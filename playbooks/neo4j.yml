@@ -43,6 +43,14 @@
         cloud_init_template_file: "{{ 'standalone.yaml.j2' if (node_count | int) == 1 else 'cluster.yaml.j2' }}"
         disable_http_config: "{{ '' if (enable_http | bool) else 'server.http.enabled=false' }}"
 
+    # Load the same install/wait helper scripts the Bicep path uses so both
+    # IaC paths render byte-identical cloud-init payloads. The canonical
+    # source lives at infra/cloud-init/scripts/; do not fork these here.
+    - name: Load shared cloud-init scripts
+      ansible.builtin.set_fact:
+        install_script_b64: "{{ lookup('file', playbook_dir + '/../infra/cloud-init/scripts/install-neo4j.sh') | b64encode }}"
+        wait_script_b64: "{{ lookup('file', playbook_dir + '/../infra/cloud-init/scripts/wait-for-neo4j.sh') | b64encode }}"
+
     - name: Render cloud-init template
       ansible.builtin.set_fact:
         cloud_init_rendered: "{{ lookup('template', 'templates/' + cloud_init_template_file) }}"

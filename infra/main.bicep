@@ -118,6 +118,12 @@ module loadbalancer 'modules/loadbalancer.bicep' = {
 var cloudInitStandalone = loadTextContent('cloud-init/standalone.yaml')
 var cloudInitCluster = loadTextContent('cloud-init/cluster.yaml')
 
+// Shared cloud-init helper scripts — loaded once and base64-injected into both
+// YAMLs so the install/wait logic lives in exactly one place. cloud-init's
+// write_files block decodes the base64 and writes them to /usr/local/bin.
+var installNeo4jScript = loadTextContent('cloud-init/scripts/install-neo4j.sh')
+var waitForNeo4jScript = loadTextContent('cloud-init/scripts/wait-for-neo4j.sh')
+
 // Base64 encode the password for safe passing through cloud-init
 // Note: This is for avoiding shell escaping issues, NOT for security/encryption
 // The adminPassword parameter is already marked @secure() for encryption in deployment metadata
@@ -138,7 +144,9 @@ var cloudInitStep9 = replace(cloudInitStep8, '\${install_gds}', installGds ? 'tr
 var cloudInitStep10 = replace(cloudInitStep9, '\${kv_name}', keyVaultName)
 var cloudInitStep11 = replace(cloudInitStep10, '\${bloom_secret_name}', bloomSecretName)
 var cloudInitStep12 = replace(cloudInitStep11, '\${gds_secret_name}', gdsSecretName)
-var cloudInitData = cloudInitStep12
+var cloudInitStep13 = replace(cloudInitStep12, '\${install_script_b64}', base64(installNeo4jScript))
+var cloudInitStep14 = replace(cloudInitStep13, '\${wait_script_b64}', base64(waitForNeo4jScript))
+var cloudInitData = cloudInitStep14
 var cloudInitBase64 = base64(cloudInitData)
 
 module vmss 'modules/vmss.bicep' = {
