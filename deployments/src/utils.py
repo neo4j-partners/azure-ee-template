@@ -22,6 +22,7 @@ def run_command(
     capture_output: bool = True,
     check: bool = True,
     shell: bool = False,
+    timeout: Optional[float] = None,
 ) -> subprocess.CompletedProcess:
     """
     Run a shell command and return the result.
@@ -31,6 +32,8 @@ def run_command(
         capture_output: Whether to capture stdout/stderr
         check: Whether to raise exception on non-zero exit
         shell: Whether to run through shell
+        timeout: Seconds to wait before killing the subprocess. None means no limit.
+                 Callers should catch subprocess.TimeoutExpired.
 
     Returns:
         CompletedProcess instance with command results
@@ -44,6 +47,7 @@ def run_command(
         text=True,
         check=check,
         shell=shell,
+        timeout=timeout,
     )
 
 
