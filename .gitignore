@@ -150,8 +150,8 @@ secrets/
 # Deployment
 # =============================================================================
 # Deployment tools working directory (match both deployments/ and repo root, depending on CWD)
-.arm-testing/
-deployments/.arm-testing/
+.neo4j-deploy/
+deployments/.neo4j-deploy/
 
 # Deployment details (contains credentials)
 .deployments/

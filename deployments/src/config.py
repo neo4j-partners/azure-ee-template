@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from rich.console import Console
 
 from .constants import (
-    ARM_TESTING_DIR,
+    WORK_DIR,
     CONFIG_DIR,
     LOGS_DIR,
     PARAMS_DIR,
@@ -38,14 +38,14 @@ class ConfigManager:
         Check if the deployment tools have been initialized.
 
         Returns:
-            True if .arm-testing directory and config files exist
+            True if the work directory and config files exist
         """
-        return ARM_TESTING_DIR.exists() and SETTINGS_FILE.exists()
+        return WORK_DIR.exists() and SETTINGS_FILE.exists()
 
     def initialize_directories(self) -> None:
         """Create all necessary directories for the deployment tools."""
         directories = [
-            ARM_TESTING_DIR,
+            WORK_DIR,
             CONFIG_DIR,
             STATE_DIR,
             PARAMS_DIR,
@@ -58,7 +58,7 @@ class ConfigManager:
             directory.mkdir(parents=True, exist_ok=True)
 
         console.print(
-            f"[green]Created directory structure in {ARM_TESTING_DIR}[/green]"
+            f"[green]Created directory structure in {WORK_DIR}[/green]"
         )
 
     def load_settings(self) -> Optional[Settings]:

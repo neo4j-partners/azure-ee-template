@@ -5,14 +5,16 @@ Constants and default values for the Neo4j Azure deployment tools.
 from pathlib import Path
 from typing import Final
 
-# Directory paths (relative to deployments/)
-ARM_TESTING_DIR: Final[Path] = Path(".arm-testing")
-CONFIG_DIR: Final[Path] = ARM_TESTING_DIR / "config"
-STATE_DIR: Final[Path] = ARM_TESTING_DIR / "state"
-PARAMS_DIR: Final[Path] = ARM_TESTING_DIR / "params"
-RESULTS_DIR: Final[Path] = ARM_TESTING_DIR / "results"
-LOGS_DIR: Final[Path] = ARM_TESTING_DIR / "logs"
-TEMPLATES_DIR: Final[Path] = ARM_TESTING_DIR / "templates"
+# Directory paths (relative to deployments/). The CLI keeps all its working
+# state — settings, scenarios, per-deployment params, results, and logs —
+# under WORK_DIR. The path is gitignored.
+WORK_DIR: Final[Path] = Path(".neo4j-deploy")
+CONFIG_DIR: Final[Path] = WORK_DIR / "config"
+STATE_DIR: Final[Path] = WORK_DIR / "state"
+PARAMS_DIR: Final[Path] = WORK_DIR / "params"
+RESULTS_DIR: Final[Path] = WORK_DIR / "results"
+LOGS_DIR: Final[Path] = WORK_DIR / "logs"
+TEMPLATES_DIR: Final[Path] = WORK_DIR / "templates"
 
 # Configuration files
 SETTINGS_FILE: Final[Path] = CONFIG_DIR / "settings.yaml"

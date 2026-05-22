@@ -146,14 +146,14 @@ See [testing.md](testing.md) for the full `neo4j-connect` check reference.
 
 ## Configuration
 
-After running `uv run bicep-deploy setup`, configuration files are created in `deployments/.arm-testing/config/`:
+After running `uv run bicep-deploy setup`, configuration files are created in `deployments/.neo4j-deploy/config/`:
 
 - `settings.yaml` - Main settings (Azure subscription, regions, cleanup modes)
 - `scenarios.yaml` - Test scenario definitions
 
 ### Default Scenarios
 
-The setup wizard creates three default scenarios in `.arm-testing/config/scenarios.yaml`.
+The setup wizard creates three default scenarios in `.neo4j-deploy/config/scenarios.yaml`.
 
 #### standalone-v2025
 
