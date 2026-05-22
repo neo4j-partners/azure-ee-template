@@ -70,14 +70,14 @@ Typer-based CLI with these key modules:
 - `src/deployment.py` - DeploymentEngine for parameter generation and Azure deployment
 - `src/orchestrator.py` - DeploymentOrchestrator for submission and output extraction
 - `src/monitor.py` - DeploymentMonitor for live status tracking
-- `src/config.py` - ConfigManager for settings/scenarios in `.arm-testing/config/`
+- `src/config.py` - ConfigManager for settings/scenarios in `.neo4j-deploy/config/`
 - `src/m2m_setup.py` - M2M authentication setup via Azure CLI
 - `src/cleanup.py` - Resource group deletion with cleanup modes
 
 ### Configuration Files
 
-- `.arm-testing/config/settings.yaml` - Azure subscription, region, cleanup behavior
-- `.arm-testing/config/scenarios.yaml` - Test scenario definitions
+- `.neo4j-deploy/config/settings.yaml` - Azure subscription, region, cleanup behavior
+- `.neo4j-deploy/config/scenarios.yaml` - Test scenario definitions
 - `.deployments/{scenario}-{engine}.json` - Saved connection info after successful deployment (e.g. `peer-databricks-v2025-bicep.json`)
 
 ### M2M Authentication Flow
@@ -87,6 +87,6 @@ When M2M is enabled, the setup wizard creates Entra ID app registrations (API + 
 ## Key Patterns
 
 - Passwords are base64-encoded in Bicep to avoid shell escaping issues in cloud-init (NOT for security)
-- Deployment state is tracked in `.arm-testing/state/active-deployments.json`
+- Deployment state is tracked in `.neo4j-deploy/state/active-deployments.json`
 - Resource groups are tagged with scenario, deployment ID, owner, and cleanup mode
 - Load balancer is only deployed when `nodeCount >= 3`

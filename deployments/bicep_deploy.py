@@ -857,7 +857,7 @@ def verify(
         console.print(f"[red]Error: Scenario '{deployment_state.scenario_name}' not found in configuration[/red]")
         raise typer.Exit(1)
 
-    # Load connection info from .arm-testing/results
+    # Load connection info from the work directory's results/
     from validate_deploy import load_connection_info_from_scenario
 
     conn_data = load_connection_info_from_scenario(deployment_state.scenario_name)
@@ -1468,7 +1468,7 @@ def report(
     ] = None,
     output: Annotated[
         Optional[Path],
-        typer.Option("--output", "-o", help="Output file path (default: .arm-testing/results/)")
+        typer.Option("--output", "-o", help="Output file path (default: .neo4j-deploy/results/)")
     ] = None,
     format: Annotated[
         str,

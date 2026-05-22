@@ -408,7 +408,7 @@ def validate_deployment(
 
 def load_connection_info_from_scenario(scenario_name: str) -> Optional[dict]:
     """
-    Load the most recent connection info for a scenario from .arm-testing/results.
+    Load the most recent connection info for a scenario from the work directory.
 
     Args:
         scenario_name: Scenario name to search for
@@ -417,10 +417,11 @@ def load_connection_info_from_scenario(scenario_name: str) -> Optional[dict]:
         Connection info dictionary or None if not found
     """
     import json
-    from pathlib import Path
+
+    from src.constants import RESULTS_DIR
 
     # Path to results directory
-    results_dir = Path(".arm-testing/results")
+    results_dir = RESULTS_DIR
 
     if not results_dir.exists():
         console.print(f"[red]Error: Results directory not found: {results_dir}[/red]")
@@ -476,7 +477,7 @@ def main():
     args = [a for a in sys.argv if a != "--keep-data"]
 
     # Support two modes:
-    # 1. Scenario name (reads from .arm-testing)
+    # 1. Scenario name (reads from the work directory)
     # 2. Full manual parameters (uri, username, password, license_type)
 
     if len(args) == 2:
@@ -486,7 +487,7 @@ def main():
         console.print(f"\n[bold]Neo4j Deployment Validator[/bold]\n")
         console.print(f"[cyan]Scenario:[/cyan] {scenario_name}\n")
 
-        # Load connection info from .arm-testing
+        # Load connection info from the work directory
         conn_data = load_connection_info_from_scenario(scenario_name)
         if not conn_data:
             sys.exit(1)

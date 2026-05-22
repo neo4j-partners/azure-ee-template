@@ -123,7 +123,10 @@ runcmd:
 
     # Set initial password BEFORE first start
     echo "Setting Neo4j initial password..."
-    neo4j-admin dbms set-initial-password "$ADMIN_PASSWORD"
+    # `--` terminates option parsing so passwords beginning with '-' aren't
+    # mistaken for CLI flags (e.g. '-h' would print help and silently skip
+    # the password set).
+    neo4j-admin dbms set-initial-password -- "$ADMIN_PASSWORD"
     echo "Neo4j initial password set successfully"
 
     # Enable and start Neo4j

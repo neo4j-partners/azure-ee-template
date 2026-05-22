@@ -238,7 +238,7 @@ The full round-trip stays on the Microsoft network backbone. The NSG at the Neo4
 
 This architecture is implemented twice in the repository, once in Bicep and once in Ansible. Both paths produce the same Azure resources (same VNet CIDRs, same subnet layout, same NSG rule set, same workspace configuration), write connection details to `.deployments/{scenario}-{engine}.json` (e.g. `peer-databricks-v2025-bicep.json` or `peer-databricks-v2025-ansible.json`), and drive the same connectivity-test notebook in `notebooks/neo4j_connectivity_test.ipynb`. Pick whichever tool matches your operational preference.
 
-Both CLIs read configuration from `.arm-testing/config/settings.yaml` and support the same scenarios (`standalone-v2025`, `cluster-v2025`, `peer-databricks-v2025`).
+Both CLIs read configuration from `.neo4j-deploy/config/settings.yaml` and support the same scenarios (`standalone-v2025`, `cluster-v2025`, `peer-databricks-v2025`).
 
 ### Bicep: `infra/`
 

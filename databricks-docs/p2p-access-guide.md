@@ -31,7 +31,7 @@ export CLI=bicep-deploy
 export CLI=ansible-deploy
 ```
 
-Configuration lives in `.arm-testing/config/settings.yaml` and is shared between both CLIs. Run the setup wizard if not already done:
+Configuration lives in `.neo4j-deploy/config/settings.yaml` and is shared between both CLIs. Run the setup wizard if not already done:
 
 ```bash
 uv run $CLI setup
@@ -280,7 +280,7 @@ Both CLIs write to the same JSON schema under `.deployments/`, differentiated by
 | `.deployments/peer-databricks-v2025-bicep.json` | Bicep: merged state after both Neo4j and Databricks deployments: Neo4j connection (URI, password, LB private IP), SSH info, resource group names, VNet and NSG resource IDs, and the Databricks workspace URL |
 | `.deployments/peer-databricks-v2025-ansible.json` | Ansible: same schema, written by `ansible-deploy deploy --scenario peer-databricks-v2025` |
 | `.deployments/cluster-v2025-bicep.json` | Bicep-only intermediate file written after step one of the two-command Bicep flow. Ansible does not produce this file because its deploy command is single-step |
-| `.arm-testing/state/active-deployments.json` | Deployment IDs and statuses used by the cleanup command |
+| `.neo4j-deploy/state/active-deployments.json` | Deployment IDs and statuses used by the cleanup command |
 
 Key fields in `peer-databricks-v2025-{engine}.json`:
 

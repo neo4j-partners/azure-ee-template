@@ -25,7 +25,7 @@ uv sync
 uv run ansible-deploy setup
 ```
 
-`uv sync` installs the Python dependencies (Ansible SDK, Databricks SDK, Typer, Rich, etc.) into an isolated virtual environment. `ansible-deploy setup` runs an interactive wizard that writes two files to `.arm-testing/config/`:
+`uv sync` installs the Python dependencies (Ansible SDK, Databricks SDK, Typer, Rich, etc.) into an isolated virtual environment. `ansible-deploy setup` runs an interactive wizard that writes two files to `.neo4j-deploy/config/`:
 
 - `settings.yaml`: Azure subscription ID, default region, resource group prefix, owner email, password strategy, and cleanup behavior
 - `scenarios.yaml`: not used by the Ansible CLI directly; the Ansible path reads scenario definitions from `playbooks/scenarios/*.yml` instead

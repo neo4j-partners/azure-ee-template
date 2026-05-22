@@ -171,9 +171,9 @@ This wizard will help you configure the testing environment:
 • Password management strategy
 • M2M bearer token authentication (optional)
 
-All configuration will be stored in [cyan].arm-testing/config/[/cyan]
-Working files (logs, results, state) will be in [cyan].arm-testing/[/cyan]
-The [cyan].arm-testing/[/cyan] directory is already git-ignored.
+All configuration will be stored in [cyan].neo4j-deploy/config/[/cyan]
+Working files (logs, results, state) will be in [cyan].neo4j-deploy/[/cyan]
+The [cyan].neo4j-deploy/[/cyan] directory is already git-ignored.
 
 You can run this setup again anytime with: [cyan]uv run bicep-deploy setup[/cyan]
         """
