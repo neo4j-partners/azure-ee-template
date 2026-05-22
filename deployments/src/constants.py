@@ -52,6 +52,13 @@ DEFAULT_CLEANUP_MODE: Final[str] = "on-success"
 # Default deployment timeout (in seconds)
 DEFAULT_DEPLOYMENT_TIMEOUT: Final[int] = 1800  # 30 minutes
 
+# Cloud-init wait budget per VMSS instance. Standalone VMs finish in ~3 min;
+# cluster nodes can take longer (quorum formation + plugin install).
+CLOUD_INIT_TIMEOUT_SECONDS: Final[int] = 1200  # 20 minutes
+CLOUD_INIT_POLL_INTERVAL_SECONDS: Final[int] = 20
+# Per-poll budget for the `az vmss run-command invoke` call itself.
+CLOUD_INIT_RUN_COMMAND_TIMEOUT_SECONDS: Final[int] = 180
+
 # Azure resource tags
 RESOURCE_TAGS: Final[dict[str, str]] = {
     "purpose": "bicep-deployment",

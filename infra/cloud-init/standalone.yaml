@@ -35,10 +35,11 @@ yum_repos:
 
 # Run configuration commands
 runcmd:
-  # Import Neo4j GPG key and install
+  # Import Neo4j GPG key and install. The install logic lives in a shared
+  # script (write_files below) so standalone and cluster deploys stay in sync.
   - rpm --import https://debian.neo4j.com/neotechnology.gpg.key
   - export NEO4J_ACCEPT_LICENSE_AGREEMENT=${license_agreement}
-  - dnf install -y neo4j-enterprise
+  - /usr/local/bin/install-neo4j.sh
 
   # Set license agreement for Neo4j service
   - mkdir -p /etc/systemd/system/neo4j.service.d
@@ -129,17 +130,23 @@ runcmd:
     systemctl enable neo4j
     systemctl start neo4j
 
-  # Wait for Neo4j to be fully ready
-  # Checks HTTP on 7474 first; falls back to TCP on Bolt (7687) when HTTP is disabled
-  - |
-    until curl -s -o /dev/null -w '%{http_code}' http://localhost:7474 2>/dev/null | grep -q "200" || \
-          bash -c 'echo > /dev/tcp/localhost/7687' 2>/dev/null; do
-      echo "Waiting for Neo4j to be ready..."
-      sleep 5
-    done
-  - echo "Neo4j is ready!"
+  # Wait for Neo4j to accept HTTP (7474) or Bolt (7687) connections. Standalone
+  # nodes are normally ready in well under 2 min; the 5-min ceiling here makes
+  # a stuck install fail loudly instead of looping forever.
+  - /usr/local/bin/wait-for-neo4j.sh 60
 
 write_files:
+  # Shared install/wait helpers. Content is injected by main.bicep via
+  # loadTextContent + base64 so the canonical source lives in
+  # infra/cloud-init/scripts/, not duplicated across both YAMLs.
+  - path: /usr/local/bin/install-neo4j.sh
+    permissions: '0755'
+    encoding: b64
+    content: ${install_script_b64}
+  - path: /usr/local/bin/wait-for-neo4j.sh
+    permissions: '0755'
+    encoding: b64
+    content: ${wait_script_b64}
   - path: /var/log/neo4j-cloud-init.log
     content: |
       Neo4j cloud-init started at $(date)

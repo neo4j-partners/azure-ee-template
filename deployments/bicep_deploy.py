@@ -600,6 +600,10 @@ def deploy(
     from rich.table import Table
 
     from src.cleanup import CleanupManager
+    from src.cloud_init import (
+        find_vmss_in_resource_group,
+        wait_for_cloud_init_on_vmss,
+    )
     from src.deployment import DeploymentEngine
     from src.monitor import DeploymentMonitor
     from src.orchestrator import DeploymentOrchestrator, DeploymentPlanner
@@ -715,6 +719,35 @@ def deploy(
     console.print(f"\n[bold]Monitoring Deployments[/bold]\n")
     final_statuses = monitor.monitor_deployments(deployment_states, show_live_dashboard=True)
 
+    # ARM only tracks Azure resource provisioning, not the cloud-init script
+    # that installs and starts Neo4j. Without this wait, the CLI reports
+    # success while Neo4j may still be installing — or, worse, while a
+    # transient install failure has left the VM permanently un-Neo4j-ed.
+    console.print(f"\n[bold]Waiting for cloud-init (Neo4j install + startup)[/bold]\n")
+    for state in deployment_states:
+        if final_statuses.get(state.deployment_id) != "Succeeded":
+            continue
+        vmss = find_vmss_in_resource_group(state.resource_group_name)
+        if not vmss:
+            console.print(
+                f"[yellow]  {state.scenario_name}: no VMSS found in "
+                f"{state.resource_group_name}, skipping cloud-init wait[/yellow]"
+            )
+            continue
+        vmss_name, capacity = vmss
+        console.print(
+            f"[cyan]  {state.scenario_name}: polling {vmss_name} "
+            f"({capacity} instance{'s' if capacity != 1 else ''})...[/cyan]"
+        )
+        result = wait_for_cloud_init_on_vmss(
+            state.resource_group_name, vmss_name, capacity
+        )
+        if result.success:
+            console.print(f"[green]  ✓ {state.scenario_name}: {result.message}[/green]")
+        else:
+            console.print(f"[red]  ✗ {state.scenario_name}: {result.message}[/red]")
+            final_statuses[state.deployment_id] = "Failed"
+
     succeeded_count, failed_count = _process_deployment_outputs(
         deployment_states, final_statuses, param_files, engine, orchestrator, settings, cleanup_manager
     )
@@ -770,7 +803,7 @@ def verify(
         uv run bicep-deploy verify d681f330-499d-4523-ba5b-42e28d2b7d12  # Verify specific deployment
     """
     from src.resource_groups import ResourceGroupManager
-    from src.validate_deploy import validate_deployment
+    from validate_deploy import validate_deployment
 
     config_manager = check_initialized()
     settings = config_manager.load_settings()
@@ -825,7 +858,7 @@ def verify(
         raise typer.Exit(1)
 
     # Load connection info from .arm-testing/results
-    from src.validate_deploy import load_connection_info_from_scenario
+    from validate_deploy import load_connection_info_from_scenario
 
     conn_data = load_connection_info_from_scenario(deployment_state.scenario_name)
     if not conn_data:
